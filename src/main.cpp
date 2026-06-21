@@ -10,10 +10,10 @@
 **************************************************************************/
 
 #include <Arduino.h>           
-#include "core0/core0Task.h"          
-#include "core1/core1Task.h"                         
-#include "JsonHandler.h"
-#include "Globals.h"
+#include "core0Task.h"          
+#include "core1Task.h"                         
+#include "mutex_global.h"
+#include "variable_global.h"
 
 TaskHandle_t Task0A_Handle; 
 TaskHandle_t Task0B_Handle; 
@@ -30,8 +30,6 @@ TaskHandle_t Task1E_Handle;
 void setup() {
     Serial.begin(115200);
     vTaskDelay(pdMS_TO_TICKS(10));
-
-    initGlobal();
 
     esp_log_level_set("*", ESP_LOG_NONE);
 
