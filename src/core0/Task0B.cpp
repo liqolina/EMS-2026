@@ -1,62 +1,86 @@
-#include "core0/core0Task.h"
-#include "Globals.h"
+#include "core0Task.h"
+#include "mutex_global.h"
+#include "variable_global.h"
 
-// Konstanta menggunakan UPPER_SNAKE_CASE
+/*
+  =====================================================
+  TAG SERIAL MONITOR
+  =====================================================
+*/
+
 constexpr const char* TAG = "TASK_0B";
 
-// 1. Mengisi ID Perangkat
+/*
+  =====================================================
+  STRUCT INFO ESP
+  =====================================================
+*/
+
+extern InfoESP g_InfoESP;
+
+/*
+  =====================================================
+  INFORMASI ESP32
+  =====================================================
+*/
+
 // DDMMYYMMLLSSSS: Category | Model | Year | Month | Batch | Serial
-constexpr uint64_t DEFAULT_DEVICE_ID = 10102606010002ULL; 
+constexpr const char* DEFAULT_ID_ESP    = "10102606010002"; 
 
-// 2. Mengisi Nama dan Lokasi (Standard string copying)
-constexpr const char* DEFAULT_NAME    = "ESP32-SENSOR-CLIENT-DC-1";
-constexpr const char* DEFAULT_LOC     = "BANDUNG";
+constexpr const char* DEFAULT_NAME_ESP  = "ESP32-SENSOR-CLIENT-DC-1";
+constexpr const char* DEFAULT_LOC_ESP   = "BANDUNG";
 
 
-/**
- * Task untuk mengelola identitas dan metadata perangkat.
- */
+/*
+  =====================================================
+  DEKLARASI VOID
+  =====================================================
+*/
+
+static inline void saveESP();
+static inline void printESP();
+
+/*
+  =====================================================
+  TASK 0B
+  =====================================================
+*/
 void Task0B(void *pvParameters) {
     // Memberikan waktu bagi sistem untuk stabil
-    vTaskDelay(pdMS_TO_TICKS(600));
+    vTaskDelay(pdMS_TO_TICKS(200));
 
-    // Menunggu koneksi WiFi agar bisa mengambil IP Address
-    ESP_LOGI(TAG, "Waiting for network to capture IP...");
-    while (WiFi.status() != WL_CONNECTED) {
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-
-    ESP_LOGI(TAG, "Initializing Device Metadata...");
-
-    xSemaphoreTake(deviceMutex, portMAX_DELAY);
-        systemInfo_Client.deviceId = DEFAULT_DEVICE_ID; 
-
-        strlcpy(systemInfo_Client.deviceName, DEFAULT_NAME, sizeof(systemInfo_Client.deviceName));
-        strlcpy(systemInfo_Client.location, DEFAULT_LOC, sizeof(systemInfo_Client.location));
-
-        IPAddress localIp = WiFi.localIP();
-        strlcpy(systemInfo_Client.ipAddress, localIp.toString().c_str(), sizeof(systemInfo_Client.ipAddress));
-        strlcpy(systemInfo_Client.macAddress, WiFi.macAddress().c_str(), sizeof(systemInfo_Client.macAddress));
-
-        strcpy(systemStatus_Client.status, "Booting");
-        strcpy(systemStatus_Client.news, "Starting");
-
-        systemInfo_Client.timestamps = millis() / 1000;
-
-    xSemaphoreGive(deviceMutex);
-    
-    
-    // Log hasil inisialisasi
-    ESP_LOGI(TAG, "Device Identity Established:");
-    ESP_LOGI(TAG, " > ID       : %llu", systemInfo_Client.deviceId); // Gunakan %llu untuk uint64_t
-    ESP_LOGI(TAG, " > Name     : %s", systemInfo_Client.deviceName);
-    ESP_LOGI(TAG, " > Location : %s", systemInfo_Client.location);
-    ESP_LOGI(TAG, " > IP Addr  : %s", systemInfo_Client.ipAddress);
-    ESP_LOGI(TAG, " > MAC Addr : %s", systemInfo_Client.macAddress);
-
+    printESP();
+    saveESP();
 
     // Task ini selesai melakukan setup, masuk ke mode suspend/wait
     for (;;) {
         vTaskDelay(portMAX_DELAY); 
     }
+}
+
+/*
+  =====================================================
+  SIMPAN INFORMASI ESP
+  =====================================================
+*/
+static inline void saveESP() {
+    std::lock_guard<std::mutex> lock(info_mutex);
+
+    snprintf(g_InfoESP.id_esp, IP_SIZE, "%s", DEFAULT_ID_ESP);
+    snprintf(g_InfoESP.loc_esp, MAC_SIZE, "%s", DEFAULT_NAME_ESP);
+    snprintf(g_InfoESP.name_esp, IP_SIZE, "%s", DEFAULT_LOC_ESP);
+}
+
+/*
+  =====================================================
+  PRINT INFORMASI ESP
+  =====================================================
+*/
+
+static inline void printESP() {
+    ESP_LOGI(TAG, "============== ESP INFO ==============");
+    ESP_LOGI(TAG, "ID ESP           : %s", DEFAULT_ID_ESP);
+    ESP_LOGI(TAG, "NAME ESP         : %s", DEFAULT_NAME_ESP);
+    ESP_LOGI(TAG, "LOCATION ESP     : %s", DEFAULT_LOC_ESP);
+    ESP_LOGI(TAG, "======================================");
 }

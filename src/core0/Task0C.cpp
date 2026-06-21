@@ -1,165 +1,103 @@
-#include "core0/core0Task.h"
-#include "Globals.h"
+#include "core0Task.h"
+#include "mutex_global.h"
+#include "variable_global.h"
 
-#include <WiFi.h>
-#include <esp_now.h>
-#include "esp_log.h"
-#include <inttypes.h>
-#include <string.h>
+#include "GitHubOtaUpdater.h"
 
-constexpr const char* TAG = "TASK_0C";
+#ifndef FW_VERSION
+#define FW_VERSION "1.0.0"
+#endif
 
-constexpr const uint8_t gatewayPeerAddress[] = {
-    0x3C, 0x0F, 0x02, 0xD2, 0x1E, 0x20
-};
+namespace AppConfig {
+constexpr char GITHUB_OWNER[] = "owner-anda";
+constexpr char GITHUB_REPO[] = "repo-anda";
+constexpr char FIRMWARE_ASSET_NAME[] = "firmware-esp32.bin";
 
-static inline void espnow_DataSend();
-static inline void espnow_DataRecv(const uint8_t *incomingData, int len);
+// Kosongkan untuk repo publik.
+// Untuk repo privat, isi token dengan permission Contents: read.
+constexpr char GITHUB_TOKEN[] = "";
 
-// ------------------------
-// Fungsi salin payload TX
-// ------------------------
-static void copyTxPayloadSafely()
-{
-    xSemaphoreTake(deviceMutex, portMAX_DELAY);
-        systemInfo_Client.timestamps = millis();
-    xSemaphoreGive(deviceMutex);
+constexpr char GITHUB_API_VERSION[] = "2026-03-10";
+
+constexpr bool CHECK_ON_BOOT = true;
+constexpr bool AUTO_REBOOT_AFTER_UPDATE = true;
+constexpr bool ENABLE_ROLLBACK_CONFIRM = true;
+
+constexpr uint32_t CHECK_INTERVAL_MS = 6UL * 60UL * 60UL * 1000UL;
+constexpr uint32_t HTTP_CONNECT_TIMEOUT_MS = 15000;
+constexpr uint32_t HTTP_READ_TIMEOUT_MS = 30000;
+
+constexpr uint8_t MAX_REDIRECTS = 5;
+constexpr size_t JSON_DOC_CAPACITY = 24 * 1024;
+constexpr size_t DOWNLOAD_BUFFER_SIZE = 4096;
+
+constexpr bool STRICT_TLS = true;
+constexpr bool ALLOW_INSECURE_TLS_FOR_TESTING = false;
+
+// Isi CA PEM untuk produksi.
+const char GITHUB_API_CA[] PROGMEM = R"EOF(
+)EOF";
+
+const char GITHUB_WEB_CA[] PROGMEM = R"EOF(
+)EOF";
+
+const char GITHUB_ASSET_CA[] PROGMEM = R"EOF(
+)EOF";
+}  // namespace AppConfig
+
+// Wi-Fi sudah dikelola di modul lain.
+// Ganti isi fungsi ini bila Anda punya cara sendiri untuk mengecek konektivitas.
+bool isOtaNetworkReady() {
+    return (wifiSTA_running.load() && wifiStatus_running.load());
 }
 
-// ------------------------
-// Callback pengiriman
-// ------------------------
-static inline void onDataSent(const esp_now_send_info_t *sendInfo, esp_now_send_status_t status)
-{
-    ESP_LOGD(
-        TAG,
-        "Last packet send status: %s",
-        status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail"
-    );
+// Ganti dengan health-check aplikasi yang benar-benar relevan.
+// Jangan rollback hanya karena Wi-Fi belum sempat reconnect.
+bool otaSelfTest() {
+    // return true  -> firmware baru valid
+    // return false -> firmware baru gagal dan rollback
+    return true;
 }
 
-// ------------------------
-// Callback penerimaan
-// ------------------------
-static inline void onDataRecv(const esp_now_recv_info_t *recvInfo, const uint8_t *incomingData, int len)
-{
-    if (!incomingData || len <= 0) {
-        ESP_LOGW(TAG, "Invalid ESP-NOW RX data");
-        return;
-    }
-
-    espnow_DataRecv(incomingData, len);
+GitHubOtaConfig buildOtaConfig() {
+    GitHubOtaConfig config{};
+    config.githubOwner = AppConfig::GITHUB_OWNER;
+    config.githubRepo = AppConfig::GITHUB_REPO;
+    config.firmwareAssetName = AppConfig::FIRMWARE_ASSET_NAME;
+    config.githubToken = AppConfig::GITHUB_TOKEN;
+    config.githubApiVersion = AppConfig::GITHUB_API_VERSION;
+    config.checkOnBoot = AppConfig::CHECK_ON_BOOT;
+    config.autoRebootAfterUpdate = AppConfig::AUTO_REBOOT_AFTER_UPDATE;
+    config.enableRollbackConfirm = AppConfig::ENABLE_ROLLBACK_CONFIRM;
+    config.checkIntervalMs = AppConfig::CHECK_INTERVAL_MS;
+    config.httpConnectTimeoutMs = AppConfig::HTTP_CONNECT_TIMEOUT_MS;
+    config.httpReadTimeoutMs = AppConfig::HTTP_READ_TIMEOUT_MS;
+    config.maxRedirects = AppConfig::MAX_REDIRECTS;
+    config.jsonDocCapacity = AppConfig::JSON_DOC_CAPACITY;
+    config.downloadBufferSize = AppConfig::DOWNLOAD_BUFFER_SIZE;
+    config.networkReadyCheck = isOtaNetworkReady;
+    config.selfTestCheck = otaSelfTest;
+    config.strictTls = AppConfig::STRICT_TLS;
+    config.allowInsecureTlsForTesting = AppConfig::ALLOW_INSECURE_TLS_FOR_TESTING;
+    config.githubApiCa = AppConfig::GITHUB_API_CA;
+    config.githubWebCa = AppConfig::GITHUB_WEB_CA;
+    config.githubAssetCa = AppConfig::GITHUB_ASSET_CA;
+    return config;
 }
 
-// ------------------------
-// Task utama
-// ------------------------
-void Task0C(void *pvParameters)
-{
-    vTaskDelay(pdMS_TO_TICKS(1200));
+GitHubOtaConfig otaConfig = buildOtaConfig();
+GitHubOtaUpdater otaUpdater(otaConfig);
 
-    while (WiFi.getMode() == WIFI_MODE_NULL) {
-        ESP_LOGW(TAG, "Waiting for WiFi mode before ESP-NOW init...");
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-
-    if (esp_now_init() != ESP_OK) {
-        ESP_LOGE(TAG, "Error initializing ESP-NOW");
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "ESP-NOW Service Started");
-
-    esp_now_register_send_cb(onDataSent);
-    esp_now_register_recv_cb(onDataRecv);
-
-    esp_now_peer_info_t peerInfo = {};
-    memcpy(peerInfo.peer_addr, gatewayPeerAddress, 6);
-    peerInfo.channel = 0;
-    peerInfo.encrypt = false;
-    peerInfo.ifidx = WIFI_IF_STA;
-
-    if (!esp_now_is_peer_exist(gatewayPeerAddress)) {
-        esp_err_t addResult = esp_now_add_peer(&peerInfo);
-        if (addResult != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to add gateway peer. Error: %d", addResult);
-        } else {
-            ESP_LOGI(TAG, "Gateway peer added");
-        }
-    }
+void Task0C(void *pvParameters) {
+    vTaskDelay(pdMS_TO_TICKS(7000));
+    otaUpdater.begin();
 
     TickType_t lastWakeTime = xTaskGetTickCount();
-    const TickType_t sendInterval = pdMS_TO_TICKS(1000);
+    const TickType_t samplingInterval = pdMS_TO_TICKS(5UL * 60UL * 1000UL);
 
     for (;;) {
-        copyTxPayloadSafely();
-        espnow_DataSend();
+        otaUpdater.loop();
 
-        vTaskDelayUntil(&lastWakeTime, sendInterval);
-    }
-}
-
-static inline void espnow_DataSend() 
-{
-    // Kirim masing-masing struct secara terpisah
-    xSemaphoreTake(deviceMutex, portMAX_DELAY);
-        esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&systemInfo_Client), sizeof(systemInfo_Client));
-    xSemaphoreGive(deviceMutex);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    xSemaphoreTake(deviceMutex, portMAX_DELAY);
-        esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&systemStatus_Client), sizeof(systemStatus_Client));
-    xSemaphoreGive(deviceMutex);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    xSemaphoreTake(sensorMutex, portMAX_DELAY);
-        esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&sensor_A1), sizeof(sensor_A1));
-    xSemaphoreGive(sensorMutex);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    xSemaphoreTake(sensorMutex, portMAX_DELAY);
-        esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&sensor_A1_Status), sizeof(sensor_A1_Status));
-    xSemaphoreGive(sensorMutex);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    xSemaphoreTake(sensorMutex, portMAX_DELAY);
-        esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&sensor_B1), sizeof(sensor_B1));
-    xSemaphoreGive(sensorMutex);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    xSemaphoreTake(sensorMutex, portMAX_DELAY);
-        esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&sensor_B1_Status), sizeof(sensor_B1_Status));
-    xSemaphoreGive(sensorMutex);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    xSemaphoreTake(actMutex, portMAX_DELAY);
-        esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&cmdAct_A1_Status), sizeof(cmdAct_A1_Status));
-    xSemaphoreGive(actMutex);
-    vTaskDelay(pdMS_TO_TICKS(10));
-}
-
-static inline void espnow_DataRecv(const uint8_t *incomingData, int len) 
-{
-    if (len == sizeof(DeviceInfo)) {
-        xSemaphoreTake(deviceMutex, portMAX_DELAY);
-        memcpy(&systemInfo_Server, incomingData, sizeof(DeviceInfo));
-        xSemaphoreGive(deviceMutex);
-        ESP_LOGI(TAG, "RX HOST SYSTEM INFO: %s", systemInfo_Server.deviceName);
-    }
-    else if (len == sizeof(CommandAct)) {
-        xSemaphoreTake(actMutex, portMAX_DELAY);
-        memcpy(&cmdAct_A1, incomingData, sizeof(CommandAct));
-        xSemaphoreGive(actMutex);
-        ESP_LOGI(TAG, "RX CommandAct: %s", cmdAct_A1.command ? "ON" : "OFF");
-    }
-    else if (len == sizeof(CalibrateAct)) {
-        xSemaphoreTake(actMutex, portMAX_DELAY);
-        memcpy(&cmdAct_A1_Calib, incomingData, sizeof(CalibrateAct));
-        xSemaphoreGive(actMutex);
-        ESP_LOGI(TAG, "RX CalibrateAct");
-    }
-    else {
-        ESP_LOGW(TAG, "RX size mismatch: %d bytes", len);
+        vTaskDelayUntil(&lastWakeTime, samplingInterval);
     }
 }

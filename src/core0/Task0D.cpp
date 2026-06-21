@@ -1,240 +1,215 @@
-#include "core0/core0Task.h"
-#include "Globals.h"
+#include "core0Task.h"
+#include "mutex_global.h"
+#include "variable_global.h"
 
-#include <PubSubClient.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include "esp_log.h"
+#include <inttypes.h>
+#include <string.h>
 
-// =======================
-// KONFIGURASI WIFI
-// =======================
-const char* WIFI_SSID     = "NAMA_WIFI";
-const char* WIFI_PASSWORD = "PASSWORD_WIFI";
+/*
+  =====================================================
+  TAG SERIAL MONITOR
+  =====================================================
+*/
 
-// =======================
-// BROKER MQTT 1
-// =======================
-const char* MQTT1_SERVER = "192.168.1.10";
-const int   MQTT1_PORT   = 1883;
-const char* MQTT1_CLIENT_ID = "ESP32S3_MQTT_BROKER_1";
+constexpr const char* TAG = "TASK_0C";
 
-const char* MQTT1_USER = "";
-const char* MQTT1_PASS = "";
+/*
+  =====================================================
+  GATEWAY ADDRESS
+  =====================================================
+*/
 
-const char* MQTT1_TOPIC_SUB = "broker1/esp32/control";
-const char* MQTT1_TOPIC_PUB = "broker1/esp32/status";
+constexpr const uint8_t gatewayPeerAddress[] = {
+    0x3C, 0x0F, 0x02, 0xD2, 0x1E, 0x20
+};
 
-// =======================
-// BROKER MQTT 2
-// =======================
-const char* MQTT2_SERVER = "192.168.1.20";
-const int   MQTT2_PORT   = 1883;
-const char* MQTT2_CLIENT_ID = "ESP32S3_MQTT_BROKER_2";
+/*
+  =====================================================
+  DEKLARASI VOID
+  =====================================================
+*/
 
-const char* MQTT2_USER = "";
-const char* MQTT2_PASS = "";
+static inline void copy_VAR();
+static inline void espnow_DataSend();
+static inline void espnow_DataRecv(const uint8_t *incomingData, int len);
 
-const char* MQTT2_TOPIC_SUB = "broker2/esp32/control";
-const char* MQTT2_TOPIC_PUB = "broker2/esp32/status";
+/*
+  =====================================================
+  Callback pengiriman
+  =====================================================
+*/
 
-// =======================
-// OBJECT MQTT
-// =======================
-WiFiClient wifiClient1;
-WiFiClient wifiClient2;
-
-PubSubClient mqttClient1(wifiClient1);
-PubSubClient mqttClient2(wifiClient2);
-
-TaskHandle_t mqttTaskHandle = NULL;
-
-// Timer
-unsigned long lastPublish = 0;
-unsigned long lastReconnectMQTT1 = 0;
-unsigned long lastReconnectMQTT2 = 0;
-
-
-// =======================
-// CALLBACK BROKER 1
-// =======================
-void mqttCallback1(char* topic, byte* payload, unsigned int length) {
-  String message = "";
-
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-
-  Serial.println();
-  Serial.println("[BROKER 1] Pesan masuk");
-  Serial.print("Topic   : ");
-  Serial.println(topic);
-  Serial.print("Payload : ");
-  Serial.println(message);
-
-  if (message == "ON") {
-    Serial.println("[BROKER 1] Perintah ON diterima");
-  } 
-  else if (message == "OFF") {
-    Serial.println("[BROKER 1] Perintah OFF diterima");
-  }
-}
-
-
-// =======================
-// CALLBACK BROKER 2
-// =======================
-void mqttCallback2(char* topic, byte* payload, unsigned int length) {
-  String message = "";
-
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-
-  Serial.println();
-  Serial.println("[BROKER 2] Pesan masuk");
-  Serial.print("Topic   : ");
-  Serial.println(topic);
-  Serial.print("Payload : ");
-  Serial.println(message);
-
-  if (message == "ON") {
-    Serial.println("[BROKER 2] Perintah ON diterima");
-  } 
-  else if (message == "OFF") {
-    Serial.println("[BROKER 2] Perintah OFF diterima");
-  }
-}
-
-
-// =======================
-// KONEKSI WIFI
-// =======================
-void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) {
-    return;
-  }
-
-  Serial.println("[WiFi] Menghubungkan...");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    vTaskDelay(500 / portTICK_PERIOD_MS);
-  }
-
-  Serial.println();
-  Serial.println("[WiFi] Terhubung");
-  Serial.print("[WiFi] IP Address: ");
-  Serial.println(WiFi.localIP());
-}
-
-
-// =======================
-// RECONNECT MQTT BROKER 1
-// Non-blocking agar broker 2 tetap jalan
-// =======================
-void reconnectMQTT1() {
-  if (mqttClient1.connected()) {
-    return;
-  }
-
-  if (millis() - lastReconnectMQTT1 < 3000) {
-    return;
-  }
-
-  lastReconnectMQTT1 = millis();
-
-  Serial.println("[MQTT 1] Menghubungkan ke broker 1...");
-
-  bool connected;
-
-  if (strlen(MQTT1_USER) > 0) {
-    connected = mqttClient1.connect(
-      MQTT1_CLIENT_ID,
-      MQTT1_USER,
-      MQTT1_PASS
+static inline void onDataSent(const esp_now_send_info_t *sendInfo, esp_now_send_status_t status)
+{
+    ESP_LOGD(
+        TAG,
+        "Last packet send status: %s",
+        status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail"
     );
-  } else {
-    connected = mqttClient1.connect(MQTT1_CLIENT_ID);
-  }
-
-  if (connected) {
-    Serial.println("[MQTT 1] Terhubung");
-
-    mqttClient1.subscribe(MQTT1_TOPIC_SUB);
-    Serial.print("[MQTT 1] Subscribe: ");
-    Serial.println(MQTT1_TOPIC_SUB);
-
-    mqttClient1.publish(MQTT1_TOPIC_PUB, "ESP32-S3 connected to Broker 1");
-  } 
-  else {
-    Serial.print("[MQTT 1] Gagal, rc=");
-    Serial.println(mqttClient1.state());
-  }
 }
 
+/*
+  =====================================================
+  Callback penerimaan
+  =====================================================
+*/
 
-// =======================
-// RECONNECT MQTT BROKER 2
-// Non-blocking agar broker 1 tetap jalan
-// =======================
-void reconnectMQTT2() {
-  if (mqttClient2.connected()) {
-    return;
-  }
+static inline void onDataRecv(const esp_now_recv_info_t *recvInfo, const uint8_t *incomingData, int len)
+{
+    if (!incomingData || len <= 0) {
+        ESP_LOGW(TAG, "Invalid ESP-NOW RX data");
+        return;
+    }
 
-  if (millis() - lastReconnectMQTT2 < 3000) {
-    return;
-  }
-
-  lastReconnectMQTT2 = millis();
-
-  Serial.println("[MQTT 2] Menghubungkan ke broker 2...");
-
-  bool connected;
-
-  if (strlen(MQTT2_USER) > 0) {
-    connected = mqttClient2.connect(
-      MQTT2_CLIENT_ID,
-      MQTT2_USER,
-      MQTT2_PASS
-    );
-  } else {
-    connected = mqttClient2.connect(MQTT2_CLIENT_ID);
-  }
-
-  if (connected) {
-    Serial.println("[MQTT 2] Terhubung");
-
-    mqttClient2.subscribe(MQTT2_TOPIC_SUB);
-    Serial.print("[MQTT 2] Subscribe: ");
-    Serial.println(MQTT2_TOPIC_SUB);
-
-    mqttClient2.publish(MQTT2_TOPIC_PUB, "ESP32-S3 connected to Broker 2");
-  } 
-  else {
-    Serial.print("[MQTT 2] Gagal, rc=");
-    Serial.println(mqttClient2.state());
-  }
+    espnow_DataRecv(incomingData, len);
 }
 
-void Task0D(void *pvParameters) {
-    vTaskDelay(pdMS_TO_TICKS(1600));
+/*
+  =====================================================
+  ALL STRUCT
+  =====================================================
+*/
 
-    mqttClient1.setServer(MQTT1_SERVER, MQTT1_PORT);
-    mqttClient1.setCallback(mqttCallback1);
-    mqttClient1.setKeepAlive(30);
-    mqttClient1.setSocketTimeout(5);
+extern InfoESP g_InfoESP;
+extern InfoWifiESP g_InfoWifiESP;
+extern ValueSensor g_ValueSensor;
+extern CalibSensor g_CalibSensor;
+extern CmdAct g_CmdAct;
+extern CalibAct g_CalibAct;
+extern StatusNews g_StatusNews;
 
-    mqttClient2.setServer(MQTT2_SERVER, MQTT2_PORT);
-    mqttClient2.setCallback(mqttCallback2);
-    mqttClient2.setKeepAlive(30);
-    mqttClient2.setSocketTimeout(5);
+InfoESP local_InfoESP;
+InfoWifiESP local_InfoWifiESP;
+ValueSensor local_ValueSensor;
+CalibSensor local_CalibSensor;
+CmdAct local_CmdAct;
+CalibAct local_CalibAct;
+StatusNews local_StatusNews;
+
+/*
+  =====================================================
+  TASK 0C
+  =====================================================
+*/
+void Task0D(void *pvParameters)
+{
+    vTaskDelay(pdMS_TO_TICKS(7000));
+
+    while (!(wifiSTA_running.load() && wifiStatus_running.load())) {
+        ESP_LOGW(TAG, "Waiting for WiFi mode before ESP-NOW init...");
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
+    if (esp_now_init() != ESP_OK) {
+        ESP_LOGE(TAG, "Error initializing ESP-NOW");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "ESP-NOW Service Started");
+
+    esp_now_register_send_cb(onDataSent);
+    esp_now_register_recv_cb(onDataRecv);
+
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, gatewayPeerAddress, 6);
+    peerInfo.channel = 0;
+    peerInfo.encrypt = false;
+    peerInfo.ifidx = WIFI_IF_STA;
+
+    if (!esp_now_is_peer_exist(gatewayPeerAddress)) {
+        esp_err_t addResult = esp_now_add_peer(&peerInfo);
+        if (addResult != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to add gateway peer. Error: %d", addResult);
+        } else {
+            ESP_LOGI(TAG, "Gateway peer added");
+        }
+    }
+
+    TickType_t lastWakeTime = xTaskGetTickCount();
+    const TickType_t samplingInterval = pdMS_TO_TICKS(1000);
 
     for (;;) {
+        copy_VAR();
+        espnow_DataSend();
 
-        reconnectMQTT1();
-        reconnectMQTT2();
+        vTaskDelayUntil(&lastWakeTime, samplingInterval);
+    }
+}
 
-        vTaskDelay(portMAX_DELAY);
+/*
+  =====================================================
+  COPY VARIABLE STRUCT
+  =====================================================
+*/
+
+static inline void copy_VAR() {
+    {
+        std::lock_guard<std::mutex> lock(wifi_mutex);
+        local_InfoWifiESP = g_InfoWifiESP;
+    }
+    {
+        std::lock_guard<std::mutex> lock(info_mutex);
+        local_InfoESP = g_InfoESP;
+    }
+    {
+        std::lock_guard<std::mutex> lock(sensor_mutex);
+        local_ValueSensor = g_ValueSensor;
+    }
+    {
+        std::lock_guard<std::mutex> lock(statusnews_mutex);
+        local_StatusNews = g_StatusNews;
+    }
+}
+
+/*
+  =====================================================
+  ESPNOW DATA SEND
+  =====================================================
+*/
+
+static inline void espnow_DataSend() 
+{
+    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_InfoWifiESP), sizeof(local_InfoWifiESP));
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_InfoESP), sizeof(local_InfoESP));
+    vTaskDelay(pdMS_TO_TICKS(50));
+    
+    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_ValueSensor), sizeof(local_ValueSensor));
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_StatusNews), sizeof(local_StatusNews));
+    vTaskDelay(pdMS_TO_TICKS(50));
+}
+
+/*
+  =====================================================
+  ESPNOW DATA RECEIVED
+  =====================================================
+*/
+
+static inline void espnow_DataRecv(const uint8_t *incomingData, int len) 
+{
+    if (len == sizeof(g_CalibSensor)) {
+        std::lock_guard<std::mutex> lock(sensor_calib_mutex);
+        memcpy(&g_CalibSensor, incomingData, sizeof(g_CalibSensor));
+        ESP_LOGI(TAG, "RX Calibration Sensor ID: %s", g_CalibSensor.id_sensor);
+    }
+    else if (len == sizeof(g_CmdAct)) {
+        std::lock_guard<std::mutex> lock(act_mutex);
+        memcpy(&g_CmdAct, incomingData, sizeof(g_CmdAct));
+        ESP_LOGI(TAG, "RX Actuator Commands ID: %s", g_CmdAct.id_act);
+    }
+    else if (len == sizeof(g_CalibAct)) {
+        std::lock_guard<std::mutex> lock(act_calib_mutex);
+        memcpy(&g_CalibAct, incomingData, sizeof(g_CalibAct));
+        ESP_LOGI(TAG, "RX Calibration Actuators ID: %s", g_CalibAct.id_act);
+    }
+    else {
+        ESP_LOGW(TAG, "RX size mismatch: %d bytes", len);
     }
 }

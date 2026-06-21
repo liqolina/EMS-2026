@@ -1,12 +1,19 @@
-#include "core1/core1Task.h"
-#include "Globals.h"
-
-void Task1E(void *pvParameters) {
-  vTaskDelay(pdMS_TO_TICKS(2600));
-
-  for (;;) {
+#include "core1Task.h"
+#include "mutex_global.h"
+#include "variable_global.h"
 
 
-    vTaskDelay(portMAX_DELAY); // Block indefinitely
-  }
+void Task1E(void *pvParameters)
+{
+    vTaskDelay(pdMS_TO_TICKS(2600));
+
+
+    TickType_t lastWakeTime = xTaskGetTickCount();
+    const TickType_t samplingInterval = pdMS_TO_TICKS(1000);
+
+    for (;;) {
+
+
+        vTaskDelayUntil(&lastWakeTime, samplingInterval);
+    }
 }
