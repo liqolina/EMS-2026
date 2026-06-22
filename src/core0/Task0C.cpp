@@ -23,7 +23,7 @@ constexpr bool CHECK_ON_BOOT = true;
 constexpr bool AUTO_REBOOT_AFTER_UPDATE = true;
 constexpr bool ENABLE_ROLLBACK_CONFIRM = true;
 
-constexpr uint32_t CHECK_INTERVAL_MS = 6UL * 60UL * 60UL * 1000UL;
+constexpr uint32_t CHECK_INTERVAL_MS = 5UL * 60UL * 1000UL; // 6UL * 60UL * 60UL * 1000UL
 constexpr uint32_t HTTP_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint32_t HTTP_READ_TIMEOUT_MS = 30000;
 

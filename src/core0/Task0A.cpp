@@ -36,7 +36,7 @@ enum WifiRunMode {
   WIFI_STA_AP
 };
 
-WifiRunMode wifiRunMode = WIFI_STA_AP;
+WifiRunMode wifiRunMode = WIFI_STA_ONLY;
 
 /*
   =====================================================
@@ -44,8 +44,8 @@ WifiRunMode wifiRunMode = WIFI_STA_AP;
   =====================================================
 */
 
-constexpr const char* STA_SSID     = "ESP32_GATEWAY_NET";     
-constexpr const char* STA_PASSWORD = "12345678";  
+constexpr const char* STA_SSID     = "Berbayar";     
+constexpr const char* STA_PASSWORD = "seribu1gb";  
 constexpr const char* DEVICE_HOSTNAME  = "ESP32-SENSOR-CLIENT-DC-1";    
 
 constexpr const bool USE_STATIC_IP = false;
