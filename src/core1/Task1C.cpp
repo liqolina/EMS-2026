@@ -5,7 +5,7 @@
 
 void Task1C(void *pvParameters)
 {
-    vTaskDelay(pdMS_TO_TICKS(2600));
+    vTaskDelay(pdMS_TO_TICKS(15000));
 
 
     TickType_t lastWakeTime = xTaskGetTickCount();

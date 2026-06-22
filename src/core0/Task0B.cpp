@@ -1,6 +1,7 @@
 #include "core0Task.h"
 #include "mutex_global.h"
 #include "variable_global.h"
+#include "environment.h"
 
 /*
   =====================================================
@@ -24,11 +25,13 @@ extern InfoESP g_InfoESP;
   =====================================================
 */
 
+// Format DEFAULT_ID_ESP 
 // DDMMYYMMLLSSSS: Category | Model | Year | Month | Batch | Serial
-constexpr const char* DEFAULT_ID_ESP    = "10102606010002"; 
 
-constexpr const char* DEFAULT_NAME_ESP  = "ESP32-SENSOR-CLIENT-DC-1";
-constexpr const char* DEFAULT_LOC_ESP   = "BANDUNG";
+// constexpr const char* DEFAULT_ID_ESP    = "10102606010002"; 
+
+// constexpr const char* DEFAULT_NAME_ESP  = "ESP32-SENSOR-CLIENT-DC-1";
+// constexpr const char* DEFAULT_LOC_ESP   = "BANDUNG";
 
 
 /*

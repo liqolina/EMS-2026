@@ -1,6 +1,7 @@
 #include "core0Task.h"
 #include "mutex_global.h"
 #include "variable_global.h"
+#include "environment.h"
 
 #include <WiFi.h>
 
@@ -36,7 +37,7 @@ enum WifiRunMode {
   WIFI_STA_AP
 };
 
-WifiRunMode wifiRunMode = WIFI_STA_ONLY;
+// WifiRunMode wifiRunMode = WIFI_STA_ONLY;
 
 /*
   =====================================================
@@ -44,17 +45,17 @@ WifiRunMode wifiRunMode = WIFI_STA_ONLY;
   =====================================================
 */
 
-constexpr const char* STA_SSID     = "Berbayar";     
-constexpr const char* STA_PASSWORD = "seribu1gb";  
-constexpr const char* DEVICE_HOSTNAME  = "ESP32-SENSOR-CLIENT-DC-1";    
+// constexpr const char* STA_SSID     = "Berbayar";     
+// constexpr const char* STA_PASSWORD = "seribu";  
+// constexpr const char* DEVICE_HOSTNAME  = "ESP32-SENSOR-CLIENT-DC-1";    
 
-constexpr const bool USE_STATIC_IP = false;
+// constexpr const bool USE_STATIC_IP = false;
 
-IPAddress STA_LOCAL_IP(192, 168, 1, 50);
-IPAddress STA_GATEWAY(192, 168, 1, 1);
-IPAddress STA_SUBNET(255, 255, 255, 0);
-IPAddress STA_DNS1(1, 1, 1, 1);
-IPAddress STA_DNS2(8, 8, 8, 8);
+// IPAddress STA_LOCAL_IP(192, 168, 1, 50);
+// IPAddress STA_GATEWAY(192, 168, 1, 1);
+// IPAddress STA_SUBNET(255, 255, 255, 0);
+// IPAddress STA_DNS1(1, 1, 1, 1);
+// IPAddress STA_DNS2(8, 8, 8, 8);
 
 /*
   =====================================================
@@ -62,16 +63,16 @@ IPAddress STA_DNS2(8, 8, 8, 8);
   =====================================================
 */
 
-constexpr const char* AP_SSID      = "ESP32_GATEWAY_NET";     
-constexpr const char* AP_PASSWORD  = "12345678";  
+// constexpr const char* AP_SSID      = "ESP32_GATEWAY_NET";     
+// constexpr const char* AP_PASSWORD  = "12345678";  
 
-IPAddress AP_LOCAL_IP(10, 10, 10, 1);
-IPAddress AP_GATEWAY(10, 10, 10, 1);
-IPAddress AP_SUBNET(255, 255, 255, 0);
+// IPAddress AP_LOCAL_IP(10, 10, 10, 1);
+// IPAddress AP_GATEWAY(10, 10, 10, 1);
+// IPAddress AP_SUBNET(255, 255, 255, 0);
 
-constexpr const uint8_t AP_CHANNEL        = 6;
-constexpr const uint8_t AP_MAX_CONNECTION = 4;
-constexpr const bool AP_HIDDEN            = false;
+// constexpr const uint8_t AP_CHANNEL        = 6;
+// constexpr const uint8_t AP_MAX_CONNECTION = 4;
+// constexpr const bool AP_HIDDEN            = false;
 
 /*
   =====================================================

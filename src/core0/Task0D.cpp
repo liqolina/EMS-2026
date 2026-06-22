@@ -1,6 +1,7 @@
 #include "core0Task.h"
 #include "mutex_global.h"
 #include "variable_global.h"
+#include "environment.h"
 
 #include <WiFi.h>
 #include <esp_now.h>
@@ -22,9 +23,11 @@ constexpr const char* TAG = "TASK_0C";
   =====================================================
 */
 
-constexpr const uint8_t gatewayPeerAddress[] = {
-    0x3C, 0x0F, 0x02, 0xD2, 0x1E, 0x20
-};
+// constexpr const uint8_t gatewayPeerAddress[] = {
+//     0x3C, 0x0F, 0x02, 0xD2, 0x1E, 0x20
+// };
+
+constexpr const uint8_t gatewayPeerAddress[] = GATEWAY_PEER_ADDRESS;
 
 /*
   =====================================================
@@ -96,7 +99,7 @@ StatusNews local_StatusNews;
 */
 void Task0D(void *pvParameters)
 {
-    vTaskDelay(pdMS_TO_TICKS(7000));
+    vTaskDelay(pdMS_TO_TICKS(15000));
 
     while (!(wifiSTA_running.load() && wifiStatus_running.load())) {
         ESP_LOGW(TAG, "Waiting for WiFi mode before ESP-NOW init...");
