@@ -492,7 +492,14 @@ bool GitHubOtaUpdater::beginHttp(HTTPClient &http,
 }
 
 bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const String &url) {
+  client.setHandshakeTimeout(30);
   client.setTimeout(_config.httpReadTimeoutMs / 1000);
+
+  if (_enableInsecure && _config.allowInsecureTlsForEmergency) { 
+    client.setInsecure();
+    Serial.println(F("[TLS] Emergency mode enabled (CA configuration missing/failed)"));
+    return true; // WAJIB return true agar proses handshake HTTPS berjalan
+  }
 
   if (_config.strictTls == TESTING_INSECURE_TLS) {
     client.setInsecure();
@@ -500,13 +507,14 @@ bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const 
     return true;
   }
 
-  if(_config.strictTls == AUTO_CA_CERT_BUNDLE) {
-    client.setCACertBundle(NULL, 0); 
-    Serial.println(F("[TLS] Bundle CA Cert mode enabled (Native Cert Bundle)"));
-    return true;
-  }
+  // Khusus ESP-IDF
+  // if(_config.strictTls == AUTO_CA_CERT_BUNDLE) {
+  //   client.setCACertBundle(esp_crt_bundle_attach, nullptr);
+  //   Serial.println(F("[TLS] Bundle CA Cert mode enabled (Native Cert Bundle)"));
+  //   return true;
+  // }
 
-  if(_config.strictTls == MANUAL_CA_CERT_BUNDLE) {
+  if(_config.strictTls == CUSTOM_CA_CERT_BUNDLE) {
     size_t bundle_size = rootca_crt_bundle_end - rootca_crt_bundle_start;
     if (bundle_size > 0) {
       client.setCACertBundle(rootca_crt_bundle_start, bundle_size);
@@ -515,7 +523,7 @@ bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const 
     }
   }
 
-  if(_config.strictTls == MANUAL_CA_CERT) {
+  if(_config.strictTls == CUSTOM_CA_CERT) {
     const char *ca = pickCaForUrl(url);
     // 2. Mode Strict Tinggi - Menggunakan Hardcoded/Manual CA (.setCACert)
     if (ca != nullptr && strlen(ca) > 0) {
@@ -523,12 +531,6 @@ bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const 
       Serial.println(F("[TLS] Manual CA (high security)"));
       return true;
     } 
-  }
-
-  if (_enableInsecure) { 
-    client.setInsecure();
-    Serial.println(F("[TLS] Insecure mode enabled (CA configuration missing/failed)"));
-    return true; // WAJIB return true agar proses handshake HTTPS berjalan
   }
 
   // Jika strictTls = true, CA kosong, dan file bundle .bin tidak di-embed

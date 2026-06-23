@@ -38,7 +38,7 @@
 // constexpr size_t DOWNLOAD_BUFFER_SIZE = 4096;
 
 // constexpr bool STRICT_TLS = true;
-// constexpr bool ALLOW_INSECURE_TLS_FOR_TESTING = false;
+// constexpr bool ALLOW_INSECURE_TLS_FOR_EMERGENCY = false;
 
 // // Isi CA PEM untuk produksi.
 // const char GITHUB_API_CA[] PROGMEM = R"EOF()EOF";
@@ -91,7 +91,7 @@ GitHubOtaConfig buildOtaConfig() {
     config.networkReadyCheck = isOtaNetworkReady;
     config.selfTestCheck = otaSelfTest;
     config.strictTls = STRICT_TLS;
-    config.allowInsecureTlsForTesting = ALLOW_INSECURE_TLS_FOR_TESTING;
+    config.allowInsecureTlsForEmergency = ALLOW_INSECURE_TLS_FOR_EMERGENCY;
     config.githubApiCa = GITHUB_API_CA;
     config.githubWebCa = GITHUB_WEB_CA;
     config.githubAssetCa = GITHUB_ASSET_CA;

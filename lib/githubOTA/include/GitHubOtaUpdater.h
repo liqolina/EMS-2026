@@ -8,8 +8,8 @@ using OtaCheckCallback = bool (*)();
 enum StrictTLS {
   TESTING_INSECURE_TLS,
   AUTO_CA_CERT_BUNDLE,
-  MANUAL_CA_CERT_BUNDLE,
-  MANUAL_CA_CERT
+  CUSTOM_CA_CERT_BUNDLE,
+  CUSTOM_CA_CERT
 };
 
 struct GitHubOtaConfig {
@@ -39,7 +39,7 @@ struct GitHubOtaConfig {
 
   // TLS
   StrictTLS strictTls;
-  bool allowInsecureTlsForTesting;
+  bool allowInsecureTlsForEmergency;
   const char *githubApiCa;
   const char *githubWebCa;
   const char *githubAssetCa;
@@ -89,6 +89,7 @@ class GitHubOtaUpdater {
   uint32_t _lastCheckMs;
 
   bool _enableInsecure = false;
+  uint8_t failCount = 0;
 };
 
 #endif
