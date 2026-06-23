@@ -6,17 +6,13 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFi.h>
-#include <Network.h>             
-#include <NetworkClientSecure.h> 
+#include <Network.h>
+#include <NetworkClientSecure.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/sha256.h>
 #include "esp_crt_bundle.h"
 
-
-// PENTING: Tambahkan external reference ini di bagian atas file .cpp Anda
-// Pastikan Anda sudah menambahkan `board_build.embed_files` di platformio.ini seperti langkah sebelumnya
-extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
-extern const uint8_t rootca_crt_bundle_end[]   asm("_binary_data_cert_x509_crt_bundle_bin_end");
+constexpr const char* TAG = "TASK_0A";
 
 GitHubOtaUpdater::GitHubOtaUpdater(const GitHubOtaConfig &config)
     : _config(config), _lastCheckMs(0) {}
@@ -32,7 +28,6 @@ void GitHubOtaUpdater::begin() {
 #endif
 
   confirmPendingFirmwareIfNeeded();
-
   _lastCheckMs = millis();
 
   if (_config.checkOnBoot) {
@@ -79,8 +74,7 @@ bool GitHubOtaUpdater::checkNow() {
 #endif
   const String latestVersion = VersionUtils::normalize(release.tagName);
 
-  const int versionCompare = VersionUtils::compare(currentVersion, latestVersion);
-  if (versionCompare >= 0) {
+  if (VersionUtils::compare(currentVersion, latestVersion) >= 0) {
     Serial.println(F("[OTA] No update available"));
     return true;
   }
@@ -89,15 +83,13 @@ bool GitHubOtaUpdater::checkNow() {
                 currentVersion.c_str(),
                 latestVersion.c_str());
 
-  const bool installed = downloadAndInstall(release);
-  if (!installed) {
+  if (!downloadAndInstall(release)) {
     Serial.println(F("[OTA] OTA installation failed"));
     _enableInsecure = true;
     return false;
   }
 
   Serial.println(F("[OTA] OTA installation completed"));
-
   if (_config.autoRebootAfterUpdate) {
     Serial.println(F("[OTA] Rebooting in 2 seconds..."));
     delay(2000);
@@ -108,34 +100,20 @@ bool GitHubOtaUpdater::checkNow() {
 }
 
 bool GitHubOtaUpdater::isNetworkReady() const {
-  if (_config.networkReadyCheck != nullptr) {
-    return _config.networkReadyCheck();
-  }
-
-  return WiFi.status() == WL_CONNECTED;
+  return _config.networkReadyCheck != nullptr ? _config.networkReadyCheck() : WiFi.status() == WL_CONNECTED;
 }
 
 void GitHubOtaUpdater::confirmPendingFirmwareIfNeeded() {
-  if (!_config.enableRollbackConfirm) {
-    return;
-  }
+  if (!_config.enableRollbackConfirm) return;
 
   const esp_partition_t *runningPartition = esp_ota_get_running_partition();
-  if (runningPartition == nullptr) {
-    return;
-  }
+  if (runningPartition == nullptr) return;
 
   esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
-  if (esp_ota_get_state_partition(runningPartition, &state) != ESP_OK) {
-    return;
-  }
-
-  if (state != ESP_OTA_IMG_PENDING_VERIFY) {
-    return;
-  }
+  if (esp_ota_get_state_partition(runningPartition, &state) != ESP_OK) return;
+  if (state != ESP_OTA_IMG_PENDING_VERIFY) return;
 
   Serial.println(F("[OTA] Firmware is in PENDING_VERIFY state"));
-
   if (runSelfTest()) {
     if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
       Serial.println(F("[OTA] Firmware marked VALID"));
@@ -149,12 +127,7 @@ void GitHubOtaUpdater::confirmPendingFirmwareIfNeeded() {
 }
 
 bool GitHubOtaUpdater::runSelfTest() const {
-  if (_config.selfTestCheck != nullptr) {
-    return _config.selfTestCheck();
-  }
-
-  // Safe default: do not rollback only because no custom self-test is provided.
-  return true;
+  return _config.selfTestCheck != nullptr ? _config.selfTestCheck() : true;
 }
 
 bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
@@ -162,17 +135,11 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
   release.sizeBytes = 0;
   release.found = false;
 
-  const String url =
-      String("https://api.github.com/repos/") +
-      _config.githubOwner + "/" +
-      _config.githubRepo + "/releases/latest";
+  const String url = String("https://api.github.com/repos/") + _config.githubOwner + "/" + _config.githubRepo + "/releases/latest";
 
   NetworkClientSecure client;
   HTTPClient http;
-
-  if (!beginHttp(http, client, url, true, false)) {
-    return false;
-  }
+  if (!beginHttp(http, client, url, true, false)) return false;
 
   const int statusCode = http.GET();
   if (statusCode != HTTP_CODE_OK) {
@@ -191,10 +158,8 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
     return false;
   }
 
-  const char *tagName = doc["tag_name"] | "";
-  const char *publishedAt = doc["published_at"] | "";
-  release.tagName = String(tagName);
-  release.publishedAt = String(publishedAt);
+  release.tagName = String(doc["tag_name"] | "");
+  release.publishedAt = String(doc["published_at"] | "");
 
   JsonArray assets = doc["assets"].as<JsonArray>();
   if (assets.isNull() || assets.size() == 0) {
@@ -203,42 +168,26 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
   }
 
   for (JsonObject asset : assets) {
-    const char *assetName = asset["name"] | "";
-    const char *assetState = asset["state"] | "";
-    const String name = String(assetName);
-    const String state = String(assetState);
-
-    if (state != "uploaded") {
-      continue;
-    }
-
-    if (!isMatchingAsset(name)) {
-      continue;
-    }
+    const String name = String(asset["name"] | "");
+    const String state = String(asset["state"] | "");
+    if (state != "uploaded" || !isMatchingAsset(name)) continue;
 
     release.assetName = name;
-    const char *assetUrl = asset["url"] | "";
-    const char *browserUrl = asset["browser_download_url"] | "";
-    release.assetApiUrl = String(assetUrl);
-    release.browserDownloadUrl = String(browserUrl);
+    release.assetApiUrl = String(asset["url"] | "");
+    release.browserDownloadUrl = String(asset["browser_download_url"] | "");
     release.sizeBytes = static_cast<size_t>(asset["size"] | 0);
 
-    const char *assetDigest = asset["digest"] | "";
-    String digest = String(assetDigest);
+    String digest = String(asset["digest"] | "");
     digest.trim();
-    if (digest.startsWith("sha256:")) {
-      digest.remove(0, 7);
-    }
+    if (digest.startsWith("sha256:")) digest.remove(0, 7);
     digest.toLowerCase();
     release.sha256 = digest;
-
     release.found = true;
     break;
   }
 
   if (!release.found) {
-    Serial.printf("[OTA] Asset '%s' was not found in the latest release\n",
-                  _config.firmwareAssetName);
+    Serial.printf("[OTA] Asset '%s' was not found in the latest release\n", _config.firmwareAssetName);
     return false;
   }
 
@@ -246,21 +195,16 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
 }
 
 bool GitHubOtaUpdater::downloadAndInstall(const ReleaseInfo &release) {
-  String currentUrl = release.assetApiUrl.length() > 0
-                          ? release.assetApiUrl
-                          : release.browserDownloadUrl;
+  String currentUrl = release.assetApiUrl.length() > 0 ? release.assetApiUrl : release.browserDownloadUrl;
 
   for (uint8_t redirectCount = 0; redirectCount <= _config.maxRedirects; ++redirectCount) {
     NetworkClientSecure client;
     HTTPClient http;
     const char *headerKeys[] = {"Location"};
 
-    if (!beginHttp(http, client, currentUrl, false, true)) {
-      return false;
-    }
+    if (!beginHttp(http, client, currentUrl, false, true)) return false;
 
     http.collectHeaders(headerKeys, 1);
-
     Serial.printf("[OTA] Download URL: %s\n", currentUrl.c_str());
     const int statusCode = http.GET();
 
@@ -270,19 +214,13 @@ bool GitHubOtaUpdater::downloadAndInstall(const ReleaseInfo &release) {
       return success;
     }
 
-    if (statusCode == HTTP_CODE_MOVED_PERMANENTLY ||
-        statusCode == HTTP_CODE_FOUND ||
-        statusCode == HTTP_CODE_SEE_OTHER ||
-        statusCode == 307 ||
-        statusCode == 308) {
+    if (statusCode == HTTP_CODE_MOVED_PERMANENTLY || statusCode == HTTP_CODE_FOUND || statusCode == HTTP_CODE_SEE_OTHER || statusCode == 307 || statusCode == 308) {
       const String location = http.header("Location");
       http.end();
-
       if (location.isEmpty()) {
         Serial.println(F("[HTTP] Redirect without a Location header"));
         return false;
       }
-
       Serial.printf("[HTTP] Redirect -> %s\n", location.c_str());
       currentUrl = location;
       continue;
@@ -300,9 +238,7 @@ bool GitHubOtaUpdater::downloadAndInstall(const ReleaseInfo &release) {
 bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &release) {
   size_t expectedSize = release.sizeBytes;
   const int responseLength = http.getSize();
-  if (expectedSize == 0 && responseLength > 0) {
-    expectedSize = static_cast<size_t>(responseLength);
-  }
+  if (expectedSize == 0 && responseLength > 0) expectedSize = static_cast<size_t>(responseLength);
 
   if (!Update.begin(expectedSize > 0 ? expectedSize : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
     Serial.printf("[OTA] Update.begin failed: %s\n", Update.errorString());
@@ -310,14 +246,8 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   }
 
   auto *stream = http.getStreamPtr();
-  if (stream == nullptr) {
-    Serial.println(F("[HTTP] Stream pointer is null"));
-    Update.abort();
-    return false;
-  }
-
-  if (_config.downloadBufferSize == 0) {
-    Serial.println(F("[OTA] Download buffer size must be greater than zero"));
+  if (stream == nullptr || _config.downloadBufferSize == 0) {
+    Serial.println(F("[OTA] Invalid stream or download buffer size"));
     Update.abort();
     return false;
   }
@@ -332,7 +262,6 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   size_t written = 0;
   int lastPercent = -1;
   uint32_t lastDataMs = millis();
-
   mbedtls_sha256_context shaContext;
   mbedtls_sha256_init(&shaContext);
 
@@ -345,24 +274,19 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   }
 
   bool ok = true;
-
   while (http.connected() || stream->available()) {
     size_t availableBytes = stream->available();
-
     if (availableBytes == 0) {
       if ((millis() - lastDataMs) > _config.httpReadTimeoutMs) {
         Serial.println(F("[HTTP] Read timeout"));
         ok = false;
         break;
       }
-
       delay(1);
       continue;
     }
 
-    if (availableBytes > _config.downloadBufferSize) {
-      availableBytes = _config.downloadBufferSize;
-    }
+    if (availableBytes > _config.downloadBufferSize) availableBytes = _config.downloadBufferSize;
 
     const int readLen = stream->readBytes(reinterpret_cast<char *>(buffer), availableBytes);
     if (readLen <= 0) {
@@ -371,7 +295,6 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
     }
 
     lastDataMs = millis();
-
     if (mbedtls_sha256_update(&shaContext, buffer, static_cast<size_t>(readLen)) != 0) {
       Serial.println(F("[SHA256] update failed"));
       ok = false;
@@ -386,20 +309,13 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
     }
 
     written += justWritten;
-
     if (expectedSize > 0) {
       const int percent = static_cast<int>((written * 100U) / expectedSize);
       if (percent != lastPercent) {
         lastPercent = percent;
-        Serial.printf("[OTA] Progress: %d%% (%u/%u)\n",
-                      percent,
-                      static_cast<unsigned>(written),
-                      static_cast<unsigned>(expectedSize));
+        Serial.printf("[OTA] Progress: %d%% (%u/%u)\n", percent, static_cast<unsigned>(written), static_cast<unsigned>(expectedSize));
       }
-
-      if (written >= expectedSize) {
-        break;
-      }
+      if (written >= expectedSize) break;
     }
   }
 
@@ -409,7 +325,6 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
     ok = false;
   }
   mbedtls_sha256_free(&shaContext);
-
   delete[] buffer;
 
   if (!ok) {
@@ -418,23 +333,21 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   }
 
   if (expectedSize > 0 && written != expectedSize) {
-    Serial.printf("[OTA] Incomplete firmware image: %u / %u bytes\n",
-                  static_cast<unsigned>(written),
-                  static_cast<unsigned>(expectedSize));
+    Serial.printf("[OTA] Incomplete firmware image: %u / %u bytes\n", static_cast<unsigned>(written), static_cast<unsigned>(expectedSize));
     Update.abort();
     return false;
   }
 
   const String actualSha256 = bytesToHex(digestRaw, sizeof(digestRaw));
-  if (release.sha256.length() > 0) {
-    if (!actualSha256.equalsIgnoreCase(release.sha256)) {
-      Serial.println(F("[OTA] SHA-256 mismatch"));
-      Serial.printf("[OTA] Expected: %s\n", release.sha256.c_str());
-      Serial.printf("[OTA] Actual  : %s\n", actualSha256.c_str());
-      Update.abort();
-      return false;
-    }
+  if (release.sha256.length() > 0 && !actualSha256.equalsIgnoreCase(release.sha256)) {
+    Serial.println(F("[OTA] SHA-256 mismatch"));
+    Serial.printf("[OTA] Expected: %s\n", release.sha256.c_str());
+    Serial.printf("[OTA] Actual  : %s\n", actualSha256.c_str());
+    Update.abort();
+    return false;
+  }
 
+  if (release.sha256.length() > 0) {
     Serial.println(F("[OTA] SHA-256 verified"));
   } else {
     Serial.println(F("[OTA] Warning: release metadata did not include a SHA-256 digest"));
@@ -459,9 +372,7 @@ bool GitHubOtaUpdater::beginHttp(HTTPClient &http,
                                  const String &url,
                                  bool acceptJson,
                                  bool acceptOctetStream) {
-  if (!configureSecureClient(client, url)) {
-    return false;
-  }
+  if (!configureSecureClient(client, url)) return false;
 
   http.setConnectTimeout(_config.httpConnectTimeoutMs);
   http.setTimeout(_config.httpReadTimeoutMs);
@@ -473,89 +384,64 @@ bool GitHubOtaUpdater::beginHttp(HTTPClient &http,
   }
 
   http.setUserAgent("ESP32-GitHub-Release-OTA/1.0");
-
   if (acceptJson) {
     http.addHeader("Accept", "application/vnd.github+json");
     http.addHeader("X-GitHub-Api-Version", _config.githubApiVersion);
   }
-
   if (acceptOctetStream) {
     http.addHeader("Accept", "application/octet-stream");
     http.addHeader("X-GitHub-Api-Version", _config.githubApiVersion);
   }
-
   if (_config.githubToken != nullptr && strlen(_config.githubToken) > 0) {
     http.addHeader("Authorization", String("Bearer ") + _config.githubToken);
   }
-
   return true;
 }
 
 bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const String &url) {
   client.setTimeout(_config.httpReadTimeoutMs / 1000);
 
-  if (_config.strictTls == TESTING_INSECURE_TLS) {
+  if (_config.strictTls != nullptr && strcmp(_config.strictTls, "TESTING_INSECURE_TLS") == 0) {
     client.setInsecure();
     Serial.println(F("[TLS] Insecure mode enabled (Testing Only)"));
     return true;
   }
 
-  if(_config.strictTls == AUTO_CA_CERT_BUNDLE) {
-    client.setCACertBundle(NULL, 0); 
-    Serial.println(F("[TLS] Bundle CA Cert mode enabled (Native Cert Bundle)"));
+  if (_config.strictTls != nullptr && strcmp(_config.strictTls, "AUTO_CA_CERT_BUNDLE") == 0) {
+#if defined(ESP_IDF_VERSION_MAJOR)
+    client.setCACertBundle();
+    Serial.println(F("[TLS] Native CA bundle enabled"));
     return true;
+#else
+    Serial.println(F("[TLS] Native CA bundle not supported in this build"));
+    return false;
+#endif
   }
 
-  if(_config.strictTls == MANUAL_CA_CERT_BUNDLE) {
-    size_t bundle_size = rootca_crt_bundle_end - rootca_crt_bundle_start;
-    if (bundle_size > 0) {
-      client.setCACertBundle(rootca_crt_bundle_start, bundle_size);
-      Serial.println(F("[TLS] CA Cert Bundle (Fallback Custom Bin)"));
-      return true;
-    }
-  }
-
-  if(_config.strictTls == MANUAL_CA_CERT) {
+  if (_config.strictTls != nullptr && strcmp(_config.strictTls, "MANUAL_CA_CERT") == 0) {
     const char *ca = pickCaForUrl(url);
-    // 2. Mode Strict Tinggi - Menggunakan Hardcoded/Manual CA (.setCACert)
     if (ca != nullptr && strlen(ca) > 0) {
       client.setCACert(ca);
       Serial.println(F("[TLS] Manual CA (high security)"));
       return true;
-    } 
+    }
   }
 
-  if (_enableInsecure) { 
+  if (_enableInsecure) {
     client.setInsecure();
     Serial.println(F("[TLS] Insecure mode enabled (CA configuration missing/failed)"));
-    return true; // WAJIB return true agar proses handshake HTTPS berjalan
+    return true;
   }
 
-  // Jika strictTls = true, CA kosong, dan file bundle .bin tidak di-embed
   _enableInsecure = true;
   Serial.printf("[TLS] Critical Error: Missing CA or Bundle configuration for URL: %s\n", url.c_str());
   return false;
 }
 
 const char *GitHubOtaUpdater::pickCaForUrl(const String &url) const {
-
-  // API GitHub
-  if (url.indexOf("api.github.com") >= 0) {
-    return _config.githubApiCa;   // DIGICERT G2
-  }
-
-  // RAW ASSETS / CDN
-  if (url.indexOf("githubusercontent.com") >= 0 ||
-      url.indexOf("release-assets.githubusercontent.com") >= 0 ||
-      url.indexOf("objects.githubusercontent.com") >= 0) {
-    return _config.githubAssetCa;  // ISRG X1 (OK)
-  }
-
-  // WEB GitHub
-  if (url.indexOf("github.com") >= 0) {
-    return _config.githubWebCa;    // DIGICERT G2
-  }
-
+  if (url.indexOf("api.github.com") >= 0) return _config.githubApiCa;
+  if (url.indexOf("githubusercontent.com") >= 0 || url.indexOf("release-assets.githubusercontent.com") >= 0 || url.indexOf("objects.githubusercontent.com") >= 0) return _config.githubAssetCa;
+  if (url.indexOf("github.com") >= 0) return _config.githubWebCa;
   return nullptr;
 }
 
@@ -565,14 +451,11 @@ bool GitHubOtaUpdater::isMatchingAsset(const String &name) const {
 
 String GitHubOtaUpdater::bytesToHex(const uint8_t *data, const size_t length) {
   static const char hex[] = "0123456789abcdef";
-
   String out;
   out.reserve(length * 2);
-
   for (size_t i = 0; i < length; ++i) {
     out += hex[(data[i] >> 4) & 0x0F];
     out += hex[data[i] & 0x0F];
   }
-
   return out;
 }

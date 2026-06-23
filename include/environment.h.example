@@ -52,17 +52,26 @@
 
 /*
   =====================================================
+  GATEWAY ADDRESS
+  =====================================================
+*/
+
+#define GATEWAY_PEER_ADDRESS { 0x3C, 0x0F, 0x02, 0xD2, 0x1E, 0x20 }
+
+
+/*
+  =====================================================
   OTA ESP32
   =====================================================
 */
 
-#define GITHUB_OWNER                     "owner-anda"
-#define GITHUB_REPO                      "repo-anda"
-#define FIRMWARE_ASSET_NAME              "firmware-esp32.bin"
+#define GITHUB_OWNER                     "liqolina"
+#define GITHUB_REPO                      "EMS-2026"
+#define FIRMWARE_ASSET_NAME              "firmware.bin"
 
 // Kosongkan untuk repo publik.
 // Untuk repo privat, isi token dengan permission Contents: read.
-#define GITHUB_TOKEN                     ""
+#define GITHUB_TOKEN                     "token-github"
 
 #define GITHUB_API_VERSION               "2026-03-10"
 
@@ -78,22 +87,29 @@
 #define JSON_DOC_CAPACITY                (24 * 1024)
 #define DOWNLOAD_BUFFER_SIZE             4096
 
-#define STRICT_TLS                       true
+// MODE STRICT_TLS
+// TESTING_INSECURE_TLS,
+// AUTO_CA_CERT_BUNDLE,
+// MANUAL_CA_CERT_BUNDLE,
+// MANUAL_CA_CERT
+
+#define STRICT_TLS                       TESTING_INSECURE_TLS
 #define ALLOW_INSECURE_TLS_FOR_TESTING   false
 
-// Isi CA PEM untuk produksi.
-#define GITHUB_API_CA R"EOF()EOF"
+// Sectigo Root E46
+static const char GITHUB_API_CA[] PROGMEM = R"EOF()EOF";
 
-#define GITHUB_WEB_CA R"EOF()EOF"
+//Sectigo Root E46
+#define GITHUB_WEB_CA GITHUB_API_CA
+#define GITHUB_ASSET_CA GITHUB_API_CA
 
-#define GITHUB_ASSET_CA R"EOF()EOF"
+// Let’s Encrypt chain
+// static const char GITHUB_ASSET_CA[] PROGMEM = R"EOF()EOF";
 
-/*
-  =====================================================
-  GATEWAY ADDRESS
-  =====================================================
-*/
+// Isi CA PEM untuk produksi dalam bentuk file di littleFS.
+// #define GITHUB_API_CA "/DigiCertTLSRSA4096RootG5.crt.pem"
+// #define GITHUB_WEB_CA "/DigiCertTLSRSA4096RootG5.crt.pem"
+// #define GITHUB_ASSET_CA "/DigiCertTLSRSA4096RootG5.crt.pem"
 
-#define GATEWAY_PEER_ADDRESS { 0x3C, 0x0F, 0x02, 0xD2, 0x1E, 0x20 }
 
 #endif

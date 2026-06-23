@@ -15,7 +15,7 @@
   =====================================================
 */
 
-constexpr const char* TAG = "TASK_0C";
+constexpr const char* TAG = "TASK_0D";
 
 /*
   =====================================================
@@ -94,7 +94,7 @@ StatusNews local_StatusNews;
 
 /*
   =====================================================
-  TASK 0C
+  TASK 0D
   =====================================================
 */
 void Task0D(void *pvParameters)
@@ -103,7 +103,7 @@ void Task0D(void *pvParameters)
 
     while (!(wifiSTA_running.load() && wifiStatus_running.load())) {
         ESP_LOGW(TAG, "Waiting for WiFi mode before ESP-NOW init...");
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
     if (esp_now_init() != ESP_OK) {

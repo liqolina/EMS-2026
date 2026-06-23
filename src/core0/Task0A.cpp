@@ -112,7 +112,7 @@ void onWifiEvent(WiFiEvent_t event) {
             wifiSTA_running.store(false);
             ESP_LOGE(TAG, "STA Lost connection. Retrying...");
             // Reconnect otomatis tanpa blocking
-            WiFi.begin(STA_SSID, AP_PASSWORD); 
+            WiFi.begin(STA_SSID, STA_PASSWORD); 
             break;
         case ARDUINO_EVENT_WIFI_STA_STOP:
             wifiSTA_running.store(false);
@@ -315,6 +315,6 @@ static inline void printAP() {
     ESP_LOGI(TAG, "AP SSID      : %s", WiFi.softAPSSID().c_str());
     ESP_LOGI(TAG, "AP IP        : %s", WiFi.softAPIP().toString().c_str());
     ESP_LOGI(TAG, "AP MAC       : %s", WiFi.softAPmacAddress().c_str());
-    ESP_LOGI(TAG, "AP Clients   : %s", WiFi.softAPgetStationNum());
+    ESP_LOGI(TAG, "AP Clients   : %d", WiFi.softAPgetStationNum());
     ESP_LOGI(TAG, "===================================");
 }

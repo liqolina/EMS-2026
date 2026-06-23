@@ -69,9 +69,9 @@ void Task0B(void *pvParameters) {
 static inline void saveESP() {
     std::lock_guard<std::mutex> lock(info_mutex);
 
-    snprintf(g_InfoESP.id_esp, IP_SIZE, "%s", DEFAULT_ID_ESP);
-    snprintf(g_InfoESP.loc_esp, MAC_SIZE, "%s", DEFAULT_NAME_ESP);
-    snprintf(g_InfoESP.name_esp, IP_SIZE, "%s", DEFAULT_LOC_ESP);
+    snprintf(g_InfoESP.id_esp, ID_SIZE, "%s", DEFAULT_ID_ESP);
+    snprintf(g_InfoESP.name_esp, NAME_ID_SIZE, "%s", DEFAULT_NAME_ESP);
+    snprintf(g_InfoESP.loc_esp, LOC_SIZE, "%s", DEFAULT_LOC_ESP);
 }
 
 /*

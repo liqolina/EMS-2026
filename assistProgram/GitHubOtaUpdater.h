@@ -5,13 +5,6 @@
 
 using OtaCheckCallback = bool (*)();
 
-enum StrictTLS {
-  TESTING_INSECURE_TLS,
-  AUTO_CA_CERT_BUNDLE,
-  MANUAL_CA_CERT_BUNDLE,
-  MANUAL_CA_CERT
-};
-
 struct GitHubOtaConfig {
   // GitHub release
   const char *githubOwner;
@@ -38,7 +31,7 @@ struct GitHubOtaConfig {
   OtaCheckCallback selfTestCheck;
 
   // TLS
-  StrictTLS strictTls;
+  const char *strictTls;
   bool allowInsecureTlsForTesting;
   const char *githubApiCa;
   const char *githubWebCa;
