@@ -89,7 +89,7 @@ class GitHubOtaUpdater {
   uint32_t _lastCheckMs;
 
   bool _enableInsecure = false;
-  uint8_t failCount = 0;
+  uint8_t _tlsFailCount = 0;
 };
 
 #endif

@@ -5,7 +5,6 @@
 
 #include <WiFi.h>
 #include <esp_now.h>
-#include "esp_log.h"
 #include <inttypes.h>
 #include <string.h>
 
@@ -22,10 +21,6 @@ constexpr const char* TAG = "TASK_0D";
   GATEWAY ADDRESS
   =====================================================
 */
-
-// constexpr const uint8_t gatewayPeerAddress[] = {
-//     0x3C, 0x0F, 0x02, 0xD2, 0x1E, 0x20
-// };
 
 constexpr const uint8_t gatewayPeerAddress[] = GATEWAY_PEER_ADDRESS;
 
@@ -47,11 +42,9 @@ static inline void espnow_DataRecv(const uint8_t *incomingData, int len);
 
 static inline void onDataSent(const esp_now_send_info_t *sendInfo, esp_now_send_status_t status)
 {
-    ESP_LOGD(
-        TAG,
-        "Last packet send status: %s",
-        status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail"
-    );
+    Serial.printf("[DEBUG][%s] Last packet send status: %s\n",
+                  TAG,
+                  (status == ESP_NOW_SEND_SUCCESS) ? "Delivery Success" : "Delivery Fail");
 }
 
 /*
@@ -63,7 +56,7 @@ static inline void onDataSent(const esp_now_send_info_t *sendInfo, esp_now_send_
 static inline void onDataRecv(const esp_now_recv_info_t *recvInfo, const uint8_t *incomingData, int len)
 {
     if (!incomingData || len <= 0) {
-        ESP_LOGW(TAG, "Invalid ESP-NOW RX data");
+        Serial.printf("[WARNING][%s] Invalid ESP-NOW RX data\n", TAG);
         return;
     }
 
@@ -97,22 +90,23 @@ StatusNews local_StatusNews;
   TASK 0D
   =====================================================
 */
+
 void Task0D(void *pvParameters)
 {
     vTaskDelay(pdMS_TO_TICKS(15000));
 
     while (!(wifiSTA_running.load() && wifiStatus_running.load())) {
-        ESP_LOGW(TAG, "Waiting for WiFi mode before ESP-NOW init...");
+        Serial.printf("[WARNING][%s] Waiting for WiFi mode before ESP-NOW init...\n", TAG);
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
     if (esp_now_init() != ESP_OK) {
-        ESP_LOGE(TAG, "Error initializing ESP-NOW");
+        Serial.printf("[ERROR][%s] Error initializing ESP-NOW\n", TAG);
         vTaskDelete(NULL);
         return;
     }
 
-    ESP_LOGI(TAG, "ESP-NOW Service Started");
+    Serial.printf("[INFO][%s] ESP-NOW Service Started\n", TAG);
 
     esp_now_register_send_cb(onDataSent);
     esp_now_register_recv_cb(onDataRecv);
@@ -126,9 +120,9 @@ void Task0D(void *pvParameters)
     if (!esp_now_is_peer_exist(gatewayPeerAddress)) {
         esp_err_t addResult = esp_now_add_peer(&peerInfo);
         if (addResult != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to add gateway peer. Error: %d", addResult);
+            Serial.printf("[ERROR][%s] Failed to add gateway peer. Error: %d\n", TAG, addResult);
         } else {
-            ESP_LOGI(TAG, "Gateway peer added");
+            Serial.printf("[INFO][%s] Gateway peer added\n", TAG);
         }
     }
 
@@ -176,16 +170,24 @@ static inline void copy_VAR() {
 
 static inline void espnow_DataSend() 
 {
-    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_InfoWifiESP), sizeof(local_InfoWifiESP));
+    esp_now_send(gatewayPeerAddress,
+                 reinterpret_cast<const uint8_t*>(&local_InfoWifiESP),
+                 sizeof(local_InfoWifiESP));
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_InfoESP), sizeof(local_InfoESP));
-    vTaskDelay(pdMS_TO_TICKS(50));
-    
-    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_ValueSensor), sizeof(local_ValueSensor));
+    esp_now_send(gatewayPeerAddress,
+                 reinterpret_cast<const uint8_t*>(&local_InfoESP),
+                 sizeof(local_InfoESP));
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    esp_now_send(gatewayPeerAddress, reinterpret_cast<const uint8_t*>(&local_StatusNews), sizeof(local_StatusNews));
+    esp_now_send(gatewayPeerAddress,
+                 reinterpret_cast<const uint8_t*>(&local_ValueSensor),
+                 sizeof(local_ValueSensor));
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    esp_now_send(gatewayPeerAddress,
+                 reinterpret_cast<const uint8_t*>(&local_StatusNews),
+                 sizeof(local_StatusNews));
     vTaskDelay(pdMS_TO_TICKS(50));
 }
 
@@ -200,19 +202,23 @@ static inline void espnow_DataRecv(const uint8_t *incomingData, int len)
     if (len == sizeof(g_CalibSensor)) {
         std::lock_guard<std::mutex> lock(sensor_calib_mutex);
         memcpy(&g_CalibSensor, incomingData, sizeof(g_CalibSensor));
-        ESP_LOGI(TAG, "RX Calibration Sensor ID: %s", g_CalibSensor.id_sensor);
+        Serial.printf("[INFO][%s] RX Calibration Sensor ID: %s\n",
+                      TAG, g_CalibSensor.id_sensor);
     }
     else if (len == sizeof(g_CmdAct)) {
         std::lock_guard<std::mutex> lock(act_mutex);
         memcpy(&g_CmdAct, incomingData, sizeof(g_CmdAct));
-        ESP_LOGI(TAG, "RX Actuator Commands ID: %s", g_CmdAct.id_act);
+        Serial.printf("[INFO][%s] RX Actuator Commands ID: %s\n",
+                      TAG, g_CmdAct.id_act);
     }
     else if (len == sizeof(g_CalibAct)) {
         std::lock_guard<std::mutex> lock(act_calib_mutex);
         memcpy(&g_CalibAct, incomingData, sizeof(g_CalibAct));
-        ESP_LOGI(TAG, "RX Calibration Actuators ID: %s", g_CalibAct.id_act);
+        Serial.printf("[INFO][%s] RX Calibration Actuators ID: %s\n",
+                      TAG, g_CalibAct.id_act);
     }
     else {
-        ESP_LOGW(TAG, "RX size mismatch: %d bytes", len);
+        Serial.printf("[WARNING][%s] RX size mismatch: %d bytes\n",
+                      TAG, len);
     }
 }

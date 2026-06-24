@@ -112,7 +112,7 @@ void Task0C(void *pvParameters) {
     otaUpdater.begin();
 
     TickType_t lastWakeTime = xTaskGetTickCount();
-    const TickType_t samplingInterval = pdMS_TO_TICKS(1UL * 60UL * 1000UL);
+    const TickType_t samplingInterval = pdMS_TO_TICKS(1000UL);
 
     for (;;) {
         otaUpdater.loop();

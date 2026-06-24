@@ -11,7 +11,15 @@
 #include <esp_ota_ops.h>
 #include <mbedtls/sha256.h>
 #include "esp_crt_bundle.h"
+#include "esp_log.h"
 
+/*
+  =====================================================
+  TAG SERIAL MONITOR
+  =====================================================
+*/
+
+constexpr const char* TAG = "OTA-GitHub";
 
 // PENTING: Tambahkan external reference ini di bagian atas file .cpp Anda
 // Pastikan Anda sudah menambahkan `board_build.embed_files` di platformio.ini seperti langkah sebelumnya
@@ -22,13 +30,12 @@ GitHubOtaUpdater::GitHubOtaUpdater(const GitHubOtaConfig &config)
     : _config(config), _lastCheckMs(0) {}
 
 void GitHubOtaUpdater::begin() {
-  Serial.println();
-  Serial.println(F("=== ESP32 GitHub Release OTA ==="));
+  ESP_LOGI(TAG, "ESP32 GitHub Release OTA");
 
 #ifndef FW_VERSION
-  Serial.println(F("[APP] FW_VERSION not defined"));
+ESP_LOGW(TAG, "FW_VERSION not defined");
 #else
-  Serial.printf("[APP] Current FW_VERSION: %s\n", FW_VERSION);
+ESP_LOGI(TAG, "Current FW_VERSION: %s", FW_VERSION);
 #endif
 
   confirmPendingFirmwareIfNeeded();
@@ -49,7 +56,7 @@ void GitHubOtaUpdater::loop() {
   if (Serial.available() > 0) {
     const char c = static_cast<char>(Serial.read());
     if (c == 'u' || c == 'U') {
-      Serial.println(F("[OTA] Manual update check requested"));
+      ESP_LOGI(TAG, "Manual update check requested");
       checkNow();
     }
   }
@@ -57,20 +64,28 @@ void GitHubOtaUpdater::loop() {
 
 bool GitHubOtaUpdater::checkNow() {
   if (!isNetworkReady()) {
-    Serial.println(F("[OTA] Network is not ready; OTA check skipped"));
+    ESP_LOGW(TAG, "Network is not ready; OTA check skipped");
     return false;
   }
 
   ReleaseInfo release{};
   if (!fetchLatestRelease(release)) {
+    _tlsFailCount++;
+    if (_tlsFailCount >= 2) {
+      Serial.println(F("[TLS] switching to emergency insecure mode"));
+      _enableInsecure = true;
+    }
+
     Serial.println(F("[OTA] Failed to fetch latest release"));
     return false;
   }
 
-  Serial.printf("[OTA] Latest tag   : %s\n", release.tagName.c_str());
-  Serial.printf("[OTA] Published at : %s\n", release.publishedAt.c_str());
-  Serial.printf("[OTA] Asset        : %s\n", release.assetName.c_str());
-  Serial.printf("[OTA] Size         : %u bytes\n", static_cast<unsigned>(release.sizeBytes));
+  _tlsFailCount = 0;
+
+  ESP_LOGI(TAG, "Latest tag   : %s", release.tagName.c_str());
+  ESP_LOGI(TAG, "Published at : %s", release.publishedAt.c_str());
+  ESP_LOGI(TAG, "Asset        : %s", release.assetName.c_str());
+  ESP_LOGI(TAG, "Size         : %u bytes", (unsigned)release.sizeBytes);
 
 #ifdef FW_VERSION
   const String currentVersion = VersionUtils::normalize(FW_VERSION);
@@ -81,25 +96,27 @@ bool GitHubOtaUpdater::checkNow() {
 
   const int versionCompare = VersionUtils::compare(currentVersion, latestVersion);
   if (versionCompare >= 0) {
-    Serial.println(F("[OTA] No update available"));
+    ESP_LOGI(TAG, "No update available");
     return true;
   }
 
-  Serial.printf("[OTA] Update available: %s -> %s\n",
-                currentVersion.c_str(),
-                latestVersion.c_str());
+  ESP_LOGI(TAG, "Update available: %s -> %s",
+          currentVersion.c_str(),
+          latestVersion.c_str());
 
   const bool installed = downloadAndInstall(release);
   if (!installed) {
-    Serial.println(F("[OTA] OTA installation failed"));
+    ESP_LOGE(TAG, "OTA installation failed");
     _enableInsecure = true;
     return false;
   }
 
-  Serial.println(F("[OTA] OTA installation completed"));
+  ESP_LOGI(TAG, "OTA installation completed");
+  _enableInsecure = false;
+  _tlsFailCount = 0;
 
   if (_config.autoRebootAfterUpdate) {
-    Serial.println(F("[OTA] Rebooting in 2 seconds..."));
+    ESP_LOGI(TAG, "Rebooting in 2 seconds...");
     delay(2000);
     ESP.restart();
   }
@@ -109,6 +126,7 @@ bool GitHubOtaUpdater::checkNow() {
 
 bool GitHubOtaUpdater::isNetworkReady() const {
   if (_config.networkReadyCheck != nullptr) {
+    ESP_LOGD(TAG, "Checking network status...");
     return _config.networkReadyCheck();
   }
 
@@ -134,16 +152,16 @@ void GitHubOtaUpdater::confirmPendingFirmwareIfNeeded() {
     return;
   }
 
-  Serial.println(F("[OTA] Firmware is in PENDING_VERIFY state"));
+  ESP_LOGI(TAG, "Firmware is in PENDING_VERIFY state");
 
   if (runSelfTest()) {
     if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
-      Serial.println(F("[OTA] Firmware marked VALID"));
+      ESP_LOGI(TAG, "Firmware marked VALID");
     } else {
-      Serial.println(F("[OTA] Failed to mark firmware VALID"));
+      ESP_LOGE(TAG, "Failed to mark firmware VALID");
     }
   } else {
-    Serial.println(F("[OTA] Self-test failed, rolling back"));
+    ESP_LOGW(TAG, "Self-test failed, rolling back");
     esp_ota_mark_app_invalid_rollback_and_reboot();
   }
 }
@@ -176,7 +194,7 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
 
   const int statusCode = http.GET();
   if (statusCode != HTTP_CODE_OK) {
-    Serial.printf("[HTTP] latest release GET failed, status=%d\n", statusCode);
+    ESP_LOGE(TAG, "Latest release GET failed, status=%d", statusCode);
     http.end();
     return false;
   }
@@ -187,7 +205,7 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
   DynamicJsonDocument doc(_config.jsonDocCapacity);
   const DeserializationError error = deserializeJson(doc, payload);
   if (error) {
-    Serial.printf("[JSON] parse failed: %s\n", error.c_str());
+    ESP_LOGE(TAG, "parse failed: %s", error.c_str());
     return false;
   }
 
@@ -198,7 +216,7 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
 
   JsonArray assets = doc["assets"].as<JsonArray>();
   if (assets.isNull() || assets.size() == 0) {
-    Serial.println(F("[OTA] Release exists, but no assets were found"));
+    ESP_LOGW(TAG, "Release exists, but no assets were found");
     return false;
   }
 
@@ -237,8 +255,7 @@ bool GitHubOtaUpdater::fetchLatestRelease(ReleaseInfo &release) {
   }
 
   if (!release.found) {
-    Serial.printf("[OTA] Asset '%s' was not found in the latest release\n",
-                  _config.firmwareAssetName);
+    ESP_LOGW(TAG, "Asset '%s' was not found in the latest release", _config.firmwareAssetName);
     return false;
   }
 
@@ -261,7 +278,7 @@ bool GitHubOtaUpdater::downloadAndInstall(const ReleaseInfo &release) {
 
     http.collectHeaders(headerKeys, 1);
 
-    Serial.printf("[OTA] Download URL: %s\n", currentUrl.c_str());
+    ESP_LOGI(TAG, "Download URL: %s", currentUrl.c_str());
     const int statusCode = http.GET();
 
     if (statusCode == HTTP_CODE_OK) {
@@ -279,7 +296,7 @@ bool GitHubOtaUpdater::downloadAndInstall(const ReleaseInfo &release) {
       http.end();
 
       if (location.isEmpty()) {
-        Serial.println(F("[HTTP] Redirect without a Location header"));
+        ESP_LOGE(TAG, "Redirect without a Location header");
         return false;
       }
 
@@ -288,12 +305,12 @@ bool GitHubOtaUpdater::downloadAndInstall(const ReleaseInfo &release) {
       continue;
     }
 
-    Serial.printf("[HTTP] Firmware download failed, status=%d\n", statusCode);
+    ESP_LOGE(TAG, "Firmware download failed, status=%d", statusCode);
     http.end();
     return false;
   }
 
-  Serial.println(F("[HTTP] Too many redirects"));
+  ESP_LOGE(TAG, "Too many redirects");
   return false;
 }
 
@@ -305,13 +322,13 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   }
 
   if (!Update.begin(expectedSize > 0 ? expectedSize : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-    Serial.printf("[OTA] Update.begin failed: %s\n", Update.errorString());
+    ESP_LOGE(TAG, "Update.begin failed: %s", Update.errorString());
     return false;
   }
 
   auto *stream = http.getStreamPtr();
   if (stream == nullptr) {
-    Serial.println(F("[HTTP] Stream pointer is null"));
+    ESP_LOGE(TAG, "Stream pointer is null");
     Update.abort();
     return false;
   }
@@ -324,7 +341,7 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
 
   uint8_t *buffer = new uint8_t[_config.downloadBufferSize];
   if (buffer == nullptr) {
-    Serial.println(F("[OTA] Failed to allocate download buffer"));
+    ESP_LOGE(TAG, "Failed to allocate download buffer");
     Update.abort();
     return false;
   }
@@ -337,7 +354,7 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   mbedtls_sha256_init(&shaContext);
 
   if (mbedtls_sha256_starts(&shaContext, 0) != 0) {
-    Serial.println(F("[SHA256] starts failed"));
+    ESP_LOGE(TAG, "SHA256 starts failed");
     delete[] buffer;
     Update.abort();
     mbedtls_sha256_free(&shaContext);
@@ -351,7 +368,7 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
 
     if (availableBytes == 0) {
       if ((millis() - lastDataMs) > _config.httpReadTimeoutMs) {
-        Serial.println(F("[HTTP] Read timeout"));
+        ESP_LOGE(TAG, "Read timeout");
         ok = false;
         break;
       }
@@ -373,14 +390,14 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
     lastDataMs = millis();
 
     if (mbedtls_sha256_update(&shaContext, buffer, static_cast<size_t>(readLen)) != 0) {
-      Serial.println(F("[SHA256] update failed"));
+      ESP_LOGE(TAG, "SHA256 update failed");
       ok = false;
       break;
     }
 
     const size_t justWritten = Update.write(buffer, static_cast<size_t>(readLen));
     if (justWritten != static_cast<size_t>(readLen)) {
-      Serial.printf("[OTA] Update.write failed: %s\n", Update.errorString());
+      ESP_LOGE(TAG, "Update.write failed: %s", Update.errorString());
       ok = false;
       break;
     }
@@ -391,10 +408,10 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
       const int percent = static_cast<int>((written * 100U) / expectedSize);
       if (percent != lastPercent) {
         lastPercent = percent;
-        Serial.printf("[OTA] Progress: %d%% (%u/%u)\n",
-                      percent,
-                      static_cast<unsigned>(written),
-                      static_cast<unsigned>(expectedSize));
+        ESP_LOGI(TAG, "Progress: %d%% (%u/%u)",
+                percent,
+                (unsigned)written,
+                (unsigned)expectedSize);
       }
 
       if (written >= expectedSize) {
@@ -405,7 +422,7 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
 
   uint8_t digestRaw[32] = {0};
   if (ok && mbedtls_sha256_finish(&shaContext, digestRaw) != 0) {
-    Serial.println(F("[SHA256] finish failed"));
+    ESP_LOGE(TAG, "SHA256 finish failed");
     ok = false;
   }
   mbedtls_sha256_free(&shaContext);
@@ -418,9 +435,9 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   }
 
   if (expectedSize > 0 && written != expectedSize) {
-    Serial.printf("[OTA] Incomplete firmware image: %u / %u bytes\n",
-                  static_cast<unsigned>(written),
-                  static_cast<unsigned>(expectedSize));
+    ESP_LOGE(TAG, "Incomplete firmware image: %u / %u bytes",
+            (unsigned)written,
+            (unsigned)expectedSize);
     Update.abort();
     return false;
   }
@@ -428,29 +445,29 @@ bool GitHubOtaUpdater::installFromHttp(HTTPClient &http, const ReleaseInfo &rele
   const String actualSha256 = bytesToHex(digestRaw, sizeof(digestRaw));
   if (release.sha256.length() > 0) {
     if (!actualSha256.equalsIgnoreCase(release.sha256)) {
-      Serial.println(F("[OTA] SHA-256 mismatch"));
+      ESP_LOGE(TAG, "SHA-256 mismatch");
       Serial.printf("[OTA] Expected: %s\n", release.sha256.c_str());
       Serial.printf("[OTA] Actual  : %s\n", actualSha256.c_str());
       Update.abort();
       return false;
     }
 
-    Serial.println(F("[OTA] SHA-256 verified"));
+    ESP_LOGI(TAG, "SHA-256 verified");
   } else {
-    Serial.println(F("[OTA] Warning: release metadata did not include a SHA-256 digest"));
+    ESP_LOGW(TAG, "Warning: release metadata did not include SHA-256 digest");
   }
 
   if (!Update.end()) {
-    Serial.printf("[OTA] Update.end failed: %s\n", Update.errorString());
+    ESP_LOGE(TAG, "Update.end failed: %s", Update.errorString());
     return false;
   }
 
   if (!Update.isFinished()) {
-    Serial.println(F("[OTA] Update did not finish cleanly"));
+    ESP_LOGE(TAG, "Update did not finish cleanly");
     return false;
   }
 
-  Serial.println(F("[OTA] Firmware successfully written"));
+  ESP_LOGI(TAG, "Firmware successfully written");
   return true;
 }
 
@@ -468,7 +485,7 @@ bool GitHubOtaUpdater::beginHttp(HTTPClient &http,
   http.useHTTP10(true);
 
   if (!http.begin(client, url)) {
-    Serial.printf("[HTTP] begin() failed: %s\n", url.c_str());
+    ESP_LOGE(TAG, "HTTP begin() failed: %s", url.c_str());
     return false;
   }
 
@@ -497,20 +514,20 @@ bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const 
 
   if (_enableInsecure && _config.allowInsecureTlsForEmergency) { 
     client.setInsecure();
-    Serial.println(F("[TLS] Emergency mode enabled (CA configuration missing/failed)"));
+    ESP_LOGI(TAG, "Emergency mode enabled (CA configuration missing/failed)");
     return true; // WAJIB return true agar proses handshake HTTPS berjalan
   }
 
   if (_config.strictTls == TESTING_INSECURE_TLS) {
     client.setInsecure();
-    Serial.println(F("[TLS] Insecure mode enabled (Testing Only)"));
+    ESP_LOGI(TAG, "Insecure mode enabled (Testing Only)");
     return true;
   }
 
   // Khusus ESP-IDF
   // if(_config.strictTls == AUTO_CA_CERT_BUNDLE) {
   //   client.setCACertBundle(esp_crt_bundle_attach, nullptr);
-  //   Serial.println(F("[TLS] Bundle CA Cert mode enabled (Native Cert Bundle)"));
+  //   ESP_LOGI(TAG, "Bundle CA Cert mode enabled (Native Cert Bundle)");
   //   return true;
   // }
 
@@ -518,7 +535,7 @@ bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const 
     size_t bundle_size = rootca_crt_bundle_end - rootca_crt_bundle_start;
     if (bundle_size > 0) {
       client.setCACertBundle(rootca_crt_bundle_start, bundle_size);
-      Serial.println(F("[TLS] CA Cert Bundle (Fallback Custom Bin)"));
+      ESP_LOGI(TAG, "CA Cert Bundle (Fallback Custom Bin)");
       return true;
     }
   }
@@ -528,14 +545,14 @@ bool GitHubOtaUpdater::configureSecureClient(NetworkClientSecure &client, const 
     // 2. Mode Strict Tinggi - Menggunakan Hardcoded/Manual CA (.setCACert)
     if (ca != nullptr && strlen(ca) > 0) {
       client.setCACert(ca);
-      Serial.println(F("[TLS] Manual CA (high security)"));
+      ESP_LOGI(TAG, "Manual CA (high security)");
       return true;
     } 
   }
 
   // Jika strictTls = true, CA kosong, dan file bundle .bin tidak di-embed
   _enableInsecure = true;
-  Serial.printf("[TLS] Critical Error: Missing CA or Bundle configuration for URL: %s\n", url.c_str());
+  ESP_LOGE(TAG, "Critical Error: Missing CA or Bundle configuration for URL: %s", url.c_str());
   return false;
 }
 

@@ -28,22 +28,10 @@ TaskHandle_t Task1D_Handle;
 TaskHandle_t Task1E_Handle; 
 
 void setup() {
+    vTaskDelay(pdMS_TO_TICKS(50));
+
     Serial.begin(115200);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    esp_log_level_set("*", ESP_LOG_NONE);
-
-    esp_log_level_set("TASK_0A", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_0B", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_0C", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_0D", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_0E", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_1A", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_1B", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_1C", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_1D", ESP_LOG_DEBUG);
-    esp_log_level_set("TASK_1E", ESP_LOG_DEBUG);
-
+    
     xTaskCreatePinnedToCore(
         Task0A,        
         "Task0A",     
